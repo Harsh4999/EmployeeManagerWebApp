@@ -1,5 +1,9 @@
 package com.webapp.service.impl;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.Date;
 import java.util.List;
 
@@ -20,11 +24,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.webapp.Constant.FileConstants;
 import com.webapp.Constant.UserImplConstants;
 import com.webapp.domain.Appuser;
 import com.webapp.domain.UserPrinciple;
 import com.webapp.enumeration.Role;
 import com.webapp.exceptions.domain.EmailAlreadyExistException;
+import com.webapp.exceptions.domain.EmailNotFoundException;
 import com.webapp.exceptions.domain.UserNotFoundException;
 import com.webapp.exceptions.domain.UsernameAlreadyExisits;
 import com.webapp.repository.AppuserRepository;
@@ -35,6 +41,7 @@ import com.webapp.service.UserService;
 @Transactional
 @Qualifier("UserDetailsService") //been name
 public class UserServiceImpl implements UserDetailsService,UserService{
+	
 	
 	
 	
@@ -103,7 +110,7 @@ public class UserServiceImpl implements UserDetailsService,UserService{
 		user.setNotLocked(true);
 		user.setRoles(Role.ROLE_USER.name());
 		user.setAuthorities(Role.ROLE_USER.getAuthorities());
-		user.setProfileImgUrl(getTempProfileImage());
+		user.setProfileImgUrl(getTempProfileImage(username));
 		appuserRepository.save(user);
 		LOGGER.info("New User password: "+password);
 		try {
@@ -115,10 +122,99 @@ public class UserServiceImpl implements UserDetailsService,UserService{
 		return user;
 	}
 	
+	@Override
+	public Appuser addNewUser(String firstName, String lastName, String username, String email, String role,
+			Boolean isNotLocked, Boolean isActive, MultipartFile profileImage) throws Exception {
+		validateNewUsernameAndEmail(StringUtils.EMPTY, username, email);
+		Appuser user = new Appuser();
+		String password = generatePassword();
+		String encodedPassword = encodePassword(password);
+		user.setUserId(generateUserId());
+		user.setFirstName(firstName);
+		user.setLastName(lastName);
+		user.setJoinedDate(new Date());
+		user.setUsername(username);
+		user.setEmail(email);
+		user.setPassword(encodedPassword);
+		user.setActive(isActive);
+		user.setNotLocked(isNotLocked);
+		user.setRoles(getRoleEnumName(role).name());
+		user.setAuthorities(getRoleEnumName(role).getAuthorities());
+		user.setProfileImgUrl(getTempProfileImage(username));
+		appuserRepository.save(user);
+		saveProfileImage(user,profileImage);
+		return user;
+	}
+
+
+	@Override
+	public Appuser updateUser(String currentUsername, String newFirstName, String newLastName, String newUsername,
+			String newEmail, String role, Boolean isNotLocked, Boolean isActive, MultipartFile profileImage) throws Exception {
+		Appuser user = validateNewUsernameAndEmail(currentUsername, newUsername, newEmail);
+		user.setFirstName(newFirstName);
+		user.setLastName(newLastName);
+		user.setUsername(newUsername);
+		user.setEmail(newEmail);
+		user.setActive(isActive);
+		user.setNotLocked(isNotLocked);
+		user.setRoles(getRoleEnumName(role).name());
+		user.setAuthorities(getRoleEnumName(role).getAuthorities());
+		appuserRepository.save(user);
+		saveProfileImage(user,profileImage);
+		return user;
+	}
+
+	@Override
+	public void deleteUser(long id) {
+		appuserRepository.deleteById(id);
+	}
+
+	@Override
+	public void resetPassword(String email) throws EmailNotFoundException, MessagingException {
+		Appuser user = appuserRepository.findUserByEmail(email);
+		if(user==null) {
+			throw new EmailNotFoundException(UserImplConstants.NO_USER_FOUND_BY_THIS_EMAIL+ email);
+		}
+		String password = generatePassword();
+		user.setPassword(encodePassword(password));
+		appuserRepository.save(user);
+		emailService.sendNewPasswordEmail(user.getFirstName(),password, user.getEmail());
+	}
+
+	@Override
+	public Appuser updateProfileImage(String username, MultipartFile profileImage) throws Exception {
+		Appuser user = validateNewUsernameAndEmail(username, null, null);
+		saveProfileImage(user, profileImage);
+		return user;
+	}
 	
+	private void saveProfileImage(Appuser user, MultipartFile profileImage) throws Exception {
+		//find image in the folder for the user then delete and relace it
+		if(profileImage != null) {
+			Path userFolder = Paths.get(FileConstants.USER_FOLDER + user.getUsername()).toAbsolutePath().normalize();
+			if(!Files.exists(userFolder)) {
+				Files.createDirectories(userFolder);
+				LOGGER.info(FileConstants.DIRECTORY_CREATED+userFolder);
+			}
+			Files.deleteIfExists(Paths.get(userFolder+user.getUsername()+FileConstants.DOT+FileConstants.JPG_EXTENTION));
+			Files.copy(profileImage.getInputStream(), userFolder.resolve(user.getUsername()+FileConstants.DOT+FileConstants.JPG_EXTENTION),StandardCopyOption.REPLACE_EXISTING);
+			user.setProfileImgUrl(setProfileImageUrl(user.getUsername()));
+			appuserRepository.save(user);
+			LOGGER.info(FileConstants.FILE_SAVED_IN_FILE_SYSTEM+ profileImage.getOriginalFilename());
+		}
+	}
+
+	private String setProfileImageUrl(String username) {
+		return ServletUriComponentsBuilder.fromCurrentContextPath().path(FileConstants.USER_IMAGE_PATH+username+FileConstants.FORWARD_SLASH
+				+username+FileConstants.DOT+FileConstants.JPG_EXTENTION).toUriString();
+	}
+
+	private Role getRoleEnumName(String role) {
+		return Role.valueOf(role.toUpperCase());
+	}
 	
-    private String getTempProfileImage() {
-		return ServletUriComponentsBuilder.fromCurrentContextPath().path(UserImplConstants.USER_IMAGE_PROFILE_PATH).toUriString();
+    private String getTempProfileImage(String username) {
+		return ServletUriComponentsBuilder.fromCurrentContextPath().path(FileConstants.DEFAULT_USER_IMAGE_PATH+username).toUriString();
 	}
 
 	private String encodePassword(String password) {
@@ -182,35 +278,5 @@ public class UserServiceImpl implements UserDetailsService,UserService{
 		return appuserRepository.findUserByEmail(email);
 	}
 
-	@Override
-	public Appuser addNewUser(String firstName, String lastName, String username, String email, String role,
-			Boolean isNotLocked, Boolean isActive, MultipartFile profileImage) {
-		// TODO Auto-generated method stub
-		return null;
-	}
 
-	@Override
-	public Appuser updateUser(String currentUsername, String newFirstName, String newLastName, String newUsername,
-			String newEmail, String role, Boolean isNotLocked, Boolean isActive, MultipartFile profileImage) {
-		// TODO Auto-generated method stub
-		return null;
-	}
-
-	@Override
-	public void deleteUser(long id) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public void resetPassword(String email) {
-		// TODO Auto-generated method stub
-		
-	}
-
-	@Override
-	public Appuser updateProfileImage(String username, MultipartFile profileImage) {
-		// TODO Auto-generated method stub
-		return null;
-	}
 }
