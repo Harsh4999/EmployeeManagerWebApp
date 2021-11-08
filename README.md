@@ -10,8 +10,9 @@
 |   `Register Employee` |       `/user/register`       |   Can Register new User under diffrent Roles  |
 |     `Login`           |       `/user/login`          | Basic login form with Spring Security & JWT |
 |   `Add Employee`      |       `/user/add`            |  Admin Role employee can add new employee   |
-|    `Update Employee`  |       `/user/update`-        |   All employees can update thier profile image, password etc |
+|    `Update Employee`  |       `/user/update`         |   All employees can update thier profile image, password etc |
 |   `Delete Employee`   |       `/user/delete`         |   Only employee having SUPER ADMIN role can delete employees    |
+|   `Reset password`    |       `/user/resetPassword`  |  Everyone can reset password the new password would be emailed |
 
 
 ## Extras
